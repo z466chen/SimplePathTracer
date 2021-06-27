@@ -16,6 +16,8 @@ int main(int argc, char** argv)
     // Change the definition here to change resolution
     Scene scene(784, 784);
 
+    init_random_device();
+
     Material* red = new Material(DIFFUSE, Vector3f(0.0f));
     red->Kd = Vector3f(0.63f, 0.065f, 0.05f);
     Material* green = new Material(DIFFUSE, Vector3f(0.0f));
@@ -52,5 +54,6 @@ int main(int argc, char** argv)
     std::cout << "          : " << std::chrono::duration_cast<std::chrono::minutes>(stop - start).count() << " minutes\n";
     std::cout << "          : " << std::chrono::duration_cast<std::chrono::seconds>(stop - start).count() << " seconds\n";
 
+    delete_random_device();
     return 0;
 }

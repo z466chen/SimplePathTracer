@@ -33,9 +33,9 @@ public:
     public:
         const static int THREAD_NUM = 32;
 
-        const static int WINDOW_SIZE = 2048;
+        const static int WINDOW_SIZE = 1024;
 
-        const static int BUFFER_SIZE = 4096;
+        const static int BUFFER_SIZE = 2048;
 
         
         // std::mutex p_locks[THREAD_NUM];
@@ -56,6 +56,7 @@ public:
             for (int i = 0; i < THREAD_NUM; ++i) {
                 int j = i;
                 consumers[i] = std::thread([&](){
+                    init_random_device();
                     while(!terminate) {
                         std::function<void(void)> target;
                         {
@@ -75,6 +76,7 @@ public:
                         }
                         target();
                     }
+                    delete_random_device();
                 });
             }
         }
