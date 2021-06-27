@@ -12,11 +12,60 @@
 #include "BVH.hpp"
 #include "Ray.hpp"
 
+#include <semaphore.h>
+#include <future>
+#include <mutex>
+#include <unistd.h>
+#include <thread>
+#include <random>
 
 class Scene
 {
 public:
     // setting up options
+    const static int THREAD_NUM = 64;
+
+    class ThreadPool {
+    public:
+        std::mutex p_locks[THREAD_NUM];
+        std::thread pool [THREAD_NUM];
+        int nthread_waits = 0;
+
+        ThreadPool() {
+            for (int i = 0; i < THREAD_NUM; ++i) {
+                pool[i] = std::thread();
+            }
+        }
+
+        void execThread(std::function<void(void)> task) {
+            for (int i = 0; i < THREAD_NUM; ++i) {
+                std::unique_lock<std::mutex> lock(p_locks[i] ,std::defer_lock);
+                if (lock.try_lock()) {
+                    if (pool[i].joinable()) continue;
+                    pool[i] = std::thread(task);
+                    return;
+                }
+            }
+
+            int j = rand()%THREAD_NUM;
+
+            std::unique_lock<std::mutex> lock(p_locks[j]);
+            if (pool[j].joinable()) {
+                pool[j].join();
+            }
+            pool[j] = std::thread(task);    
+        } 
+
+        ~ThreadPool() {
+            for (int i = 0; i < THREAD_NUM; ++i) {
+                std::unique_lock<std::mutex> lock(p_locks[i]);
+                if (pool[i].joinable()) {
+                    pool[i].join();
+                }
+            }            
+        }
+    } t_pool;
+
     int width = 1280;
     int height = 960;
     double fov = 40;
@@ -24,8 +73,13 @@ public:
     int maxDepth = 1;
     float RussianRoulette = 0.8;
 
-    Scene(int w, int h) : width(w), height(h)
-    {}
+    Scene(int w, int h) : width(w), height(h) {
+        // sem_init(&thread_limiter, 1, THREAD_NUM);
+    }
+
+    ~Scene() {
+        // sem_destroy(&thread_limiter);
+    }
 
     void Add(Object *object) { objects.push_back(object); }
     void Add(std::unique_ptr<Light> light) { lights.push_back(std::move(light)); }
@@ -35,7 +89,9 @@ public:
     Intersection intersect(const Ray& ray) const;
     BVHAccel *bvh;
     void buildBVH();
-    Vector3f castRay(const Ray &ray, int depth) const;
+    
+    Vector3f castRay(const Ray &ray, int depth);
+
     void sampleLight(Intersection &pos, float &pdf) const;
     bool trace(const Ray &ray, const std::vector<Object*> &objects, float &tNear, uint32_t &index, Object **hitObject);
     std::tuple<Vector3f, Vector3f> HandleAreaLight(const AreaLight &light, const Vector3f &hitPoint, const Vector3f &N,

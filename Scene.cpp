@@ -4,6 +4,7 @@
 
 #include "Scene.hpp"
 
+
 void Scene::buildBVH() {
     printf(" - Generating BVH...\n\n");
     this->bvh = new BVHAccel(objects, 1, BVHAccel::SplitMethod::NAIVE);
@@ -57,9 +58,8 @@ bool Scene::trace(
 }
 
 // Implementation of Path Tracing
-Vector3f Scene::castRay(const Ray &ray, int depth) const
-{
-    // // TO DO Implement Path Tracing Algorithm here
+Vector3f Scene::castRay(const Ray &ray, int depth) {
+
     Intersection current = intersect(ray);
     if (current.happened) {
         Vector3f wo = normalize(-ray.direction);
@@ -85,21 +85,19 @@ Vector3f Scene::castRay(const Ray &ray, int depth) const
                 -ws) * dotProduct(N, ws))/ (dl_distance*dl_distance * pdf));
         }
 
-        float random = get_random_float();
+        float random = (rand()%1000)/1000.0f;
+
         if (random > Scene::RussianRoulette) {
             return l_dir;
         }
 
-        Vector3f l_indir(0,0,0);
-
         Vector3f wi = normalize(current.m->sample(wo, N));
 
-        return l_dir + (castRay(Ray(p,wi),depth+1) * 
+        return l_dir + castRay(Ray(p,wi),depth+1) * 
             current.m->eval(wi, wo, N) * 
-            dotProduct(N, wi))/ (RussianRoulette * 
+            dotProduct(N, wi)/(RussianRoulette * 
             current.m->pdf(wi, wo, N));
     }
-
+    
     return Vector3f(0,0,0);
-
 }
