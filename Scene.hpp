@@ -18,51 +18,89 @@
 #include <unistd.h>
 #include <thread>
 #include <random>
+#include <queue>
+
+inline int rec_dis(int a, int b, int b_size) {
+    return (a >= b)? (a - b):(a + b_size - b);
+}
 
 class Scene
 {
 public:
     // setting up options
-    const static int THREAD_NUM = 64;
 
     class ThreadPool {
     public:
-        std::mutex p_locks[THREAD_NUM];
-        std::thread pool [THREAD_NUM];
-        int nthread_waits = 0;
+        const static int THREAD_NUM = 32;
+
+        const static int WINDOW_SIZE = 2048;
+
+        const static int BUFFER_SIZE = 4096;
+
+        
+        // std::mutex p_locks[THREAD_NUM];
+        std::thread consumers [THREAD_NUM];
+        std::function<void(void)> waitQueue[BUFFER_SIZE];
+        int consumer_id = 0;
+        int producer_id = 0;
+
+        std::condition_variable consumer_cv, producer_cv;
+        
+        // std::mutex p_lock,c_lock;
+        std::mutex q_lock;
+        // int nthread_waits = 0;
+        std::atomic<bool> terminate = false;
 
         ThreadPool() {
+
             for (int i = 0; i < THREAD_NUM; ++i) {
-                pool[i] = std::thread();
+                int j = i;
+                consumers[i] = std::thread([&](){
+                    while(!terminate) {
+                        std::function<void(void)> target;
+                        {
+                            std::unique_lock<std::mutex> lock(q_lock);
+
+                            consumer_cv.wait(lock, [&](){
+                                int dis = rec_dis(producer_id, consumer_id, BUFFER_SIZE);
+                                return ((dis > 0) && (dis <= WINDOW_SIZE)) || (terminate);
+                            });
+                            if(terminate) break;
+                            target = std::move(waitQueue[consumer_id]);
+                            int dis = rec_dis(producer_id, consumer_id, BUFFER_SIZE);
+                            if (dis == WINDOW_SIZE) {
+                                producer_cv.notify_all();
+                            }
+                            consumer_id = (consumer_id + 1)%BUFFER_SIZE;
+                        }
+                        target();
+                    }
+                });
             }
         }
 
-        void execThread(std::function<void(void)> task) {
-            for (int i = 0; i < THREAD_NUM; ++i) {
-                std::unique_lock<std::mutex> lock(p_locks[i] ,std::defer_lock);
-                if (lock.try_lock()) {
-                    if (pool[i].joinable()) continue;
-                    pool[i] = std::thread(task);
-                    return;
-                }
+        void produce(std::function<void(void)> &&task) {
+            std::unique_lock<std::mutex> lock(q_lock);
+            producer_cv.wait(lock, [&](){
+                int dis = rec_dis(producer_id, consumer_id, BUFFER_SIZE);
+                return ((dis >= 0) && (dis < WINDOW_SIZE)) || (terminate);
+            });         
+            waitQueue[producer_id] = std::move(task);
+            int dis = rec_dis(producer_id, consumer_id, BUFFER_SIZE);
+            if (dis == 0) {
+                consumer_cv.notify_all(); 
             }
-
-            int j = rand()%THREAD_NUM;
-
-            std::unique_lock<std::mutex> lock(p_locks[j]);
-            if (pool[j].joinable()) {
-                pool[j].join();
-            }
-            pool[j] = std::thread(task);    
-        } 
+            producer_id = (producer_id+1)%BUFFER_SIZE;
+        }
 
         ~ThreadPool() {
-            for (int i = 0; i < THREAD_NUM; ++i) {
-                std::unique_lock<std::mutex> lock(p_locks[i]);
-                if (pool[i].joinable()) {
-                    pool[i].join();
+            terminate = true;
+            consumer_cv.notify_all();
+            for (auto & t: consumers) {
+                if (t.joinable()) {
+                    t.join();
                 }
-            }            
+            }          
         }
     } t_pool;
 

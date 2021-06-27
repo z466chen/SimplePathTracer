@@ -39,48 +39,56 @@ void Renderer::Render(Scene& scene)
 
     srand(1);
 
-    // for (int i = 0; i < 10000; ++i) {
-    //     int j = i;
-    //     scene.t_pool.execThread([j](){
-            
-    //         usleep(100);
-    //         std::cout << j << std::endl;
-    //     });
-    // }
-
     float width = scene.width;
     float height = scene.height;
-    for (uint32_t j = 0; j < scene.height; ++j) {
-        for (uint32_t i = 0; i < scene.width; ++i) {
 
-            float x = (2 * (i + 0.5) / (float)scene.width - 1) *
-                            imageAspectRatio * scale;
-            float y = (1 - 2 * (j + 0.5) / (float)scene.height) * scale;
+    int NUM_OF_PRODUCERS = 8;
+    std::thread producers[NUM_OF_PRODUCERS];
 
-            scene.t_pool.execThread([eye_pos, x, y, 
-                &framebuffer, m, spp, 
-                &scene, &total_num]() {
+    auto producer_task = [&](int start, int end) {
+        for (uint32_t j = start; j < end; ++j) {
+            for (uint32_t i = 0; i < scene.width; ++i) {
 
-                
+                float x = (2 * (i + 0.5) / (float)scene.width - 1) *
+                                imageAspectRatio * scale;
+                float y = (1 - 2 * (j + 0.5) / (float)scene.height) * scale;
 
                 Vector3f dir = normalize(Vector3f(-x, y, 1));
-                Vector3f mean = 0.0f;
                 
                 const Ray primaryRay = Ray(eye_pos, dir);
                 
                 Intersection current = scene.intersect(primaryRay);
+
+                auto fb_ptr = framebuffer;
+
                 if (current.emit.norm() > EPSILON) {
-                    mean = current.emit;
+                    fb_ptr[j*scene.width+i] = current.emit;
+                    ++total_num;
                 } else {
-                    for (int k = 0; k < spp; k++){
-                        mean += scene.castRay(primaryRay, 0) / spp;  
-                    }
-                }
-                framebuffer[m] = mean;
-                ++total_num;
-            });
-            m++;
+                    scene.t_pool.produce([&scene, spp, primaryRay, 
+                        fb_ptr, i, j, &total_num]() {
+                        Vector3f mean = 0.0f;
+                        
+                        for (int k = 0; k < spp; k++){
+                            mean += scene.castRay(primaryRay, 0) / spp;  
+                        }
+                        fb_ptr[j*scene.width+i] = mean;
+                        ++total_num;
+                    });
+                }                
+            }
         }
+    };
+
+    for (int i = 0; i < NUM_OF_PRODUCERS; ++i) {
+        int start = (i)*(height/NUM_OF_PRODUCERS);
+        int end = (i+1)*(height/NUM_OF_PRODUCERS);
+        if (i == NUM_OF_PRODUCERS-1) end = height; 
+        producers[i] = std::thread(producer_task, start, end);
+    }
+
+    for (int i = 0; i < NUM_OF_PRODUCERS; ++i) {
+        producers[i].join();
     }
 
     counter.join();
