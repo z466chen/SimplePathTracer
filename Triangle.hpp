@@ -89,7 +89,9 @@ public:
 class MeshTriangle : public Object
 {
 public:
-    MeshTriangle(const std::string& filename, Material *mt = new Material())
+    MeshTriangle(const std::string& filename, Material *mt = new Material(),
+        Vector3f translate = Vector3f(0,0,0), Vector3f scale = Vector3f(1,1,1),
+        Vector3f rotate = Vector3f(0,0,0))
     {
         tag = filename;
         objl::Loader loader;
@@ -98,6 +100,33 @@ public:
         m = mt;
         assert(loader.LoadedMeshes.size() == 1);
         auto mesh = loader.LoadedMeshes[0];
+
+        auto toWorld = [&](Vector3f &target) {
+            // scale
+            target = scale * target;
+            //rotate
+            float cos_alpha = cos((rotate.x/180.0f)*M_PI);
+            float sin_alpha = sin((rotate.x/180.0f)*M_PI);
+            float cos_beta = cos((rotate.y/180.0f)*M_PI);
+            float sin_beta = sin((rotate.y/180.0f)*M_PI);
+            float cos_gamma = cos((rotate.z/180.0f)*M_PI);
+            float sin_gamma = sin((rotate.z/180.0f)*M_PI);
+
+            Vector3f temp;
+            temp.x = cos_alpha*cos_beta*target.x + 
+                (cos_alpha*sin_beta*sin_gamma - sin_alpha*cos_gamma)*target.y+
+                (cos_alpha*sin_beta*cos_gamma + sin_alpha*sin_gamma)*target.z;
+            temp.y = sin_alpha*cos_beta*target.x + 
+                (sin_alpha*sin_beta*sin_gamma + cos_alpha*cos_gamma)*target.y+
+                (sin_alpha*sin_beta*cos_gamma - cos_alpha*sin_gamma)*target.z;
+            temp.z = -1*sin_beta*target.x + 
+                cos_beta*sin_gamma*target.y + 
+                cos_beta*cos_gamma*target.z;
+            target = temp;
+
+            //translate
+            target = target + translate;
+        };
 
         Vector3f min_vert = Vector3f{std::numeric_limits<float>::infinity(),
                                      std::numeric_limits<float>::infinity(),
@@ -112,7 +141,9 @@ public:
                 auto vert = Vector3f(mesh.Vertices[i + j].Position.X,
                                      mesh.Vertices[i + j].Position.Y,
                                      mesh.Vertices[i + j].Position.Z);
+                toWorld(vert);
                 face_vertices[j] = vert;
+                
 
                 min_vert = Vector3f(std::min(min_vert.x, vert.x),
                                     std::min(min_vert.y, vert.y),
@@ -122,10 +153,16 @@ public:
                                     std::max(max_vert.z, vert.z));
             }
 
+            // if (filename == "../models/bunny/bunny.obj") {
+            //     std::cout << face_vertices[0] << std::endl;
+            //     std::cout << face_vertices[1] << std::endl;
+            //     std::cout << face_vertices[2] << std::endl;
+            // }   
+
             triangles.emplace_back(face_vertices[0], face_vertices[1],
                                    face_vertices[2], mt);
         }
-
+        
         bounding_box = Bounds3(min_vert, max_vert);
 
         std::vector<Object*> ptrs;
@@ -137,6 +174,7 @@ public:
         bvh = new BVHAccel(ptrs);
     }
 
+    
     // MeshTriangle(const std::string& filename, Vector3f translate, 
     //     Vector3f rotate, Vector3f scale,  Material *mt = new Material()) {
 
