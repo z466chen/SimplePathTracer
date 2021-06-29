@@ -86,7 +86,8 @@ public:
             producer_cv.wait(lock, [&](){
                 int dis = rec_dis(producer_id, consumer_id, BUFFER_SIZE);
                 return ((dis >= 0) && (dis < WINDOW_SIZE)) || (terminate);
-            });         
+            });     
+            if(terminate) return;    
             waitQueue[producer_id] = std::move(task);
             int dis = rec_dis(producer_id, consumer_id, BUFFER_SIZE);
             if (dis == 0) {
@@ -97,7 +98,11 @@ public:
 
         ~ThreadPool() {
             terminate = true;
-            consumer_cv.notify_all();
+            {
+                std::unique_lock<std::mutex> lock(q_lock);
+                consumer_cv.notify_all();
+                producer_cv.notify_all();
+            }
             for (auto & t: consumers) {
                 if (t.joinable()) {
                     t.join();

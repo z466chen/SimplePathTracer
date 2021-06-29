@@ -137,6 +137,11 @@ public:
         bvh = new BVHAccel(ptrs);
     }
 
+    // MeshTriangle(const std::string& filename, Vector3f translate, 
+    //     Vector3f rotate, Vector3f scale,  Material *mt = new Material()) {
+
+    // }
+
     bool intersect(const Ray& ray) { return true; }
 
     bool intersect(const Ray& ray, float& tnear, uint32_t& index) const

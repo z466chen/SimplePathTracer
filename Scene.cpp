@@ -61,6 +61,9 @@ bool Scene::trace(
 Vector3f Scene::castRay(const Ray &ray, int depth) {
 
     Intersection current = intersect(ray);
+    if (current.emit.norm() > EPSILON) {
+        return Vector3f(fmin(current.emit.x, 1),fmin(current.emit.y, 1),fmin(current.emit.z, 1));
+    }
     if (current.happened) {
         Vector3f wo = normalize(-ray.direction);
         // Direct lighting calculation
@@ -81,7 +84,7 @@ Vector3f Scene::castRay(const Ray &ray, int depth) {
 
         Vector3f l_dir(0,0,0);    
         if (dl_intersection.distance > dl_distance - 0.01) {
-            l_dir = ((sample.emit * current.m->eval(wo, ws, N) * dotProduct(NN, 
+            l_dir = ((sample.emit * current.m->eval(ws, wo, N) * dotProduct(NN, 
                 -ws) * dotProduct(N, ws))/ (dl_distance*dl_distance * pdf));
         }
 
@@ -92,11 +95,14 @@ Vector3f Scene::castRay(const Ray &ray, int depth) {
         }
 
         Vector3f wi = normalize(current.m->sample(wo, N));
-
-        return l_dir + castRay(Ray(p,wi),depth+1) * 
+        Vector3f l_indir = castRay(Ray(p,wi),depth+1) * 
             current.m->eval(wi, wo, N) * 
             dotProduct(N, wi)/(RussianRoulette * 
             current.m->pdf(wi, wo, N));
+
+        Vector3f total = l_indir + l_dir;
+
+        return Vector3f(fmin(total.x, 1), fmin(total.y, 1), fmin(total.z, 1));
     }
     
     return Vector3f(0,0,0);

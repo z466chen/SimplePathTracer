@@ -25,7 +25,7 @@ void Renderer::Render(Scene& scene)
     int m = 0;
 
     // change the spp value to change sample ammount
-    int spp = 32;
+    int spp = 1024;
     std::cout << "SPP: " << spp << "\n";
 
     std::atomic<int> total_num;
@@ -56,26 +56,18 @@ void Renderer::Render(Scene& scene)
                 Vector3f dir = normalize(Vector3f(-x, y, 1));
                 
                 const Ray primaryRay = Ray(eye_pos, dir);
-                
-                Intersection current = scene.intersect(primaryRay);
-
                 auto fb_ptr = framebuffer;
 
-                if (current.emit.norm() > EPSILON) {
-                    fb_ptr[j*scene.width+i] = current.emit;
+                scene.t_pool.produce([&scene, spp, primaryRay, 
+                    fb_ptr, i, j, &total_num]() {
+                    Vector3f mean = 0.0f;
+                    
+                    for (int k = 0; k < spp; k++){
+                        mean += scene.castRay(primaryRay, 0) / spp;  
+                    }
+                    fb_ptr[j*scene.width+i] = mean;
                     ++total_num;
-                } else {
-                    scene.t_pool.produce([&scene, spp, primaryRay, 
-                        fb_ptr, i, j, &total_num]() {
-                        Vector3f mean = 0.0f;
-                        
-                        for (int k = 0; k < spp; k++){
-                            mean += scene.castRay(primaryRay, 0) / spp;  
-                        }
-                        fb_ptr[j*scene.width+i] = mean;
-                        ++total_num;
-                    });
-                }                
+                });              
             }
         }
     };
@@ -96,13 +88,24 @@ void Renderer::Render(Scene& scene)
 
     // save framebuffer to file
     FILE* fp = fopen("binary.ppm", "wb");
+    // int count = 0;
+    // int m_count = 0;
     (void)fprintf(fp, "P6\n%d %d\n255\n", scene.width, scene.height);
     for (auto i = 0; i < scene.height * scene.width; ++i) {
         static unsigned char color[3];
-        color[0] = (unsigned char)(255 * std::pow(clamp(0, 1, framebuffer[i].x), 0.6f));
-        color[1] = (unsigned char)(255 * std::pow(clamp(0, 1, framebuffer[i].y), 0.6f));
-        color[2] = (unsigned char)(255 * std::pow(clamp(0, 1, framebuffer[i].z), 0.6f));
+        if (framebuffer[i].norm() > EPSILON) {
+            // ++count;
+            color[0] = (unsigned char)(255 * std::pow(clamp(0, 1, framebuffer[i].x), 0.6f));
+            color[1] = (unsigned char)(255 * std::pow(clamp(0, 1, framebuffer[i].y), 0.6f));
+            color[2] = (unsigned char)(255 * std::pow(clamp(0, 1, framebuffer[i].z), 0.6f));
+        } else {
+            color[0] = 0;
+            color[1] = 0;
+            color[2] = 0;
+        }
+        // if (color[0] > EPSILON || color[1] > EPSILON || color[2] > EPSILON) ++m_count;
         fwrite(color, 1, 3, fp);
     }
+    // std::cout << count << " " <<m_count << std::endl;
     fclose(fp);    
 }

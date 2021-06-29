@@ -7,7 +7,7 @@
 
 #include "Vector.hpp"
 
-enum MaterialType { DIFFUSE};
+enum MaterialType { DIFFUSE, MICROFACET};
 
 class Material{
 private:
@@ -85,6 +85,20 @@ private:
         return a.x * B + a.y * C + a.z * N;
     }
 
+    Vector3f toLocal(const Vector3f &a, const Vector3f &N){
+        Vector3f B, C;
+        if (std::fabs(N.x) > std::fabs(N.y)){
+            float invLen = 1.0f / std::sqrt(N.x * N.x + N.z * N.z);
+            C = Vector3f(N.z * invLen, 0.0f, -N.x *invLen);
+        }
+        else {
+            float invLen = 1.0f / std::sqrt(N.y * N.y + N.z * N.z);
+            C = Vector3f(0.0f, N.z * invLen, -N.y *invLen);
+        }
+        B = crossProduct(C, N);
+        return Vector3f(dotProduct(a, B), dotProduct(a, C), dotProduct(a, N));
+    }
+
 public:
     MaterialType m_type;
     //Vector3f m_color;
@@ -92,6 +106,11 @@ public:
     float ior;
     Vector3f Kd, Ks;
     float specularExponent;
+    float diffuseFactor;
+    float roughness;
+    Vector3f f0;
+    float h_alpha;
+    float metallic;
     //Texture tex;
 
     inline Material(MaterialType t=DIFFUSE, Vector3f e=Vector3f(0,0,0));
@@ -131,6 +150,17 @@ Vector3f Material::getColorAt(double u, double v) {
 
 Vector3f Material::sample(const Vector3f &wi, const Vector3f &N){
     switch(m_type){
+        case MICROFACET:
+        {
+            float x_1 = get_random_float(), x_2 = get_random_float();
+            float theta_m = acos(sqrt((1 - x_1)/(x_1*(h_alpha*h_alpha - 1)+1)));
+            float phi = 2*M_PI*x_2;
+            Vector3f h = Vector3f(sin(theta_m)*sin(phi), sin(theta_m)*cos(phi), 
+                cos(theta_m));
+            Vector3f world_h = normalize(toWorld(h, N));
+            return 2*dotProduct(world_h, wi)*world_h - wi;
+            break;
+        }
         case DIFFUSE:
         {
             // uniform sample on the hemisphere
@@ -147,6 +177,13 @@ Vector3f Material::sample(const Vector3f &wi, const Vector3f &N){
 
 float Material::pdf(const Vector3f &wi, const Vector3f &wo, const Vector3f &N){
     switch(m_type){
+        case MICROFACET: 
+        {
+            Vector3f h = normalize(wo+wi);
+
+            return fabs(dotProduct(h, N))/fmax(4*fabs(dotProduct(h, wo)), EPSILON);
+            break;
+        }
         case DIFFUSE:
         {
             // uniform sample probability 1 / (2 * PI)
@@ -171,6 +208,68 @@ Vector3f Material::eval(const Vector3f &wi, const Vector3f &wo, const Vector3f &
             }
             else
                 return Vector3f(0.0f);
+            break;
+        }
+        case MICROFACET:
+        {
+            float cosalpha_i = fabs(dotProduct(N, wi));
+            float cosalpha = fabs(dotProduct(N, wo));
+            float d = diffuseFactor;
+    
+
+            if (dotProduct(N, wo) > EPSILON && dotProduct(N, wi) > EPSILON) {
+                Vector3f h = normalize(wi + wo);
+
+                float cosalpha_h = fabs(dotProduct(N, h));
+
+                // Blinn-Phong normal density
+
+                // float roughness = 0.2;
+                // float alpha = roughness * roughness;
+                
+                // double D = (1/(M_PI * alpha * alpha)) * pow(dotProduct(h, N), 
+                //     (2/(alpha*alpha) - 2));
+
+                // Beckman normal density
+                // float m = roughness;
+                // double D = (1/(m*m*pow(cosalpha_h,4)))*exp((cosalpha_h*cosalpha_h - 1)/(pow(m*cosalpha_h,2)));
+
+                // GGX normal density
+                float alpha = h_alpha;
+                double D = alpha*alpha/(M_PI*pow(
+                    cosalpha_h*cosalpha_h*(alpha*alpha - 1)+1, 2));
+
+                // float G = fmin(1, fmin((2*cosalpha_h*
+                //     cosalpha)/dotProduct(wo, h),(2*cosalpha_h*
+                //     cosalpha_i)/dotProduct(wo, h)));
+
+                //Schlick-GGX geometry function
+                float k_direct = pow(alpha+1,2)/8;
+                float k_ibl = pow(alpha,2)/2;
+
+                float k = k_direct;
+                float G =  ((cosalpha_i/(cosalpha_i*(1 - k) + k)) *
+                         (cosalpha/(cosalpha*(1 - k) + k)));
+
+                // float G = (2*cosalpha_i*cosalpha)/(
+                //     cosalpha*sqrt(alpha*alpha+(1 - alpha*alpha)*cosalpha_i*cosalpha_i)+
+                //     cosalpha_i*sqrt(alpha*alpha+(1 - alpha*alpha)*cosalpha*cosalpha));
+
+                Vector3f F = f0 + (Vector3f(1) - f0)*(1 - pow(dotProduct(h, wi),5));
+
+                // float F = kr;
+
+
+
+                // std::cout << kr << std::endl;
+                // std::cout << D << " " << G << " " << F << std::endl;
+                //                     ((D*G*F)/(4*dotProduct(N, wi)*dotProduct(N, wo))) 
+                // Kd = Vector3f(0.1914,0.125,0);
+                // Ks = Vector3f(0.5977);
+                return ((G*F)/fmax(4*cosalpha_i*cosalpha, EPSILON));
+            } else {
+                return Vector3f(0.0f);
+            }
             break;
         }
     }
